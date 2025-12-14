@@ -1,0 +1,60 @@
+name = "core-app-store"
+main = "src/index.ts"
+compatibility_date = "2024-12-14"
+node_compat = true
+
+[vars]
+ENVIRONMENT = "production"
+
+# D1 Database
+[[d1_databases]]
+binding = "DB"
+database_name = "core-app-store-db"
+database_id = "YOUR_D1_DATABASE_ID"
+
+# KV Namespace for caching
+[[kv_namespaces]]
+binding = "CACHE"
+id = "YOUR_KV_NAMESPACE_ID"
+
+# Worker AI binding
+[ai]
+binding = "AI"
+
+# Workflows binding
+[[workflows]]
+binding = "WORKFLOWS"
+name = "core-app-store-workflows"
+
+# Analytics Engine (optional, for tracking)
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+
+# Cron triggers
+[triggers]
+crons = [
+  "*/15 * * * *",  # Every 15 minutes - lightweight health refresh
+  "0 * * * *",     # Every hour - log insights & repo inference
+  "0 2 * * *"      # Daily at 2 AM - full inventory reconcile
+]
+
+# Environment-specific overrides
+[env.development]
+name = "core-app-store-dev"
+vars = { ENVIRONMENT = "development" }
+
+[[env.development.d1_databases]]
+binding = "DB"
+database_name = "core-app-store-db-dev"
+database_id = "YOUR_DEV_D1_DATABASE_ID"
+
+[[env.development.kv_namespaces]]
+binding = "CACHE"
+id = "YOUR_DEV_KV_NAMESPACE_ID"
+
+# Build configuration
+[build]
+command = "npm run build"
+
+[build.upload]
+format = "service-worker"

@@ -1,0 +1,28 @@
+{
+  "name": "core-app-store",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "npm run dev --workspace=frontend & npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "npm run dev --workspace=backend",
+    "build": "npm run build --workspaces",
+    "deploy": "npm run deploy --workspace=backend",
+    "db:migrate": "wrangler d1 migrations apply core-app-store-db",
+    "db:migrate:local": "wrangler d1 migrations apply core-app-store-db --local",
+    "db:create": "wrangler d1 create core-app-store-db",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "workspaces": [
+    "src",
+    "frontend",
+    "shared"
+  ],
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.96.0"
+  }
+}
