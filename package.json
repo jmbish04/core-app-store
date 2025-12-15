@@ -9,9 +9,9 @@
     "dev:backend": "npm run dev --workspace=backend",
     "build": "npm run build --workspaces",
     "deploy": "npm run deploy --workspace=backend",
-    "db:migrate": "wrangler d1 migrations apply core-app-store-db",
-    "db:migrate:local": "wrangler d1 migrations apply core-app-store-db --local",
-    "db:create": "wrangler d1 create core-app-store-db",
+    "db:migrate": "wrangler d1 migrations apply DB --remote", // [2025-12-15] Set by jmbish04 (repo owner)
+    "db:migrate:local": "wrangler d1 migrations apply DB --local", // [2025-12-15] Set by jmbish04 (repo owner)
+    "db:create": "wrangler d1 create core-app-store", // [2025-12-15] Set by jmbish04 (repo owner)
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present"
   },
