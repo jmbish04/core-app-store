@@ -1,25 +1,26 @@
 name = "core-app-store"
 main = "src/index.ts"
-compatibility_date = "2024-12-14"
+compatibility_date = "2025-12-14"
 node_compat = true
 
-[vars]
-ENVIRONMENT = "production"
+[observability]
+enabled = true
 
 # D1 Database
 [[d1_databases]]
 binding = "DB"
-database_name = "core-app-store-db"
-database_id = "YOUR_D1_DATABASE_ID"
+database_name = "core-app-store"
+database_id = "1a5b8cf8-afaf-49e8-b7d7-095ea3eec041" // [2025-12-15] Set by jmbish04 (repo owner)
 
 # KV Namespace for caching
 [[kv_namespaces]]
 binding = "CACHE"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "YOUR_KV_NAMESPACE_ID" // [2025-12-15] Set by jmbish04 (repo owner)
 
 # Worker AI binding
 [ai]
 binding = "AI"
+remote = true
 
 # Workflows binding
 [[workflows]]
@@ -38,23 +39,6 @@ crons = [
   "0 2 * * *"      # Daily at 2 AM - full inventory reconcile
 ]
 
-# Environment-specific overrides
-[env.development]
-name = "core-app-store-dev"
-vars = { ENVIRONMENT = "development" }
-
-[[env.development.d1_databases]]
-binding = "DB"
-database_name = "core-app-store-db-dev"
-database_id = "YOUR_DEV_D1_DATABASE_ID"
-
-[[env.development.kv_namespaces]]
-binding = "CACHE"
-id = "YOUR_DEV_KV_NAMESPACE_ID"
-
 # Build configuration
 [build]
 command = "npm run build"
-
-[build.upload]
-format = "service-worker"
