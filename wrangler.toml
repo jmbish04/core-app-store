@@ -1,0 +1,29 @@
+name = "core-app-store"
+main = "src/index.ts"
+compatibility_date = "2024-04-01"
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "core-app-store-db"
+database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+[ai]
+binding = "AI"
+
+[[workflows]]
+name = "refresh-inventory"
+binding = "REFRESH_WORKFLOW"
+class_name = "RefreshInventoryWorkflow"
+
+[triggers]
+crons = ["*/15 * * * *"]
+
+[site]
+bucket = "./public"
