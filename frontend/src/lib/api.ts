@@ -93,7 +93,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  bootstrapRepo: (repoFullName: string, plan: any) =>
+  bootstrapRepo: (repoFullName: string, plan: CreateAppPlanResponse['plan']) =>
     fetchAPI<{ success: boolean; files_created: string[] }>('/new/bootstrap', {
       method: 'POST',
       body: JSON.stringify({ repo_full_name: repoFullName, plan }),
