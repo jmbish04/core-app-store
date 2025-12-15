@@ -5,6 +5,8 @@ import { CloudflareBindings } from './lib/cloudflare';
 import appsRouter from './routes/apps';
 import newAppRouter from './routes/new';
 import { RefreshInventoryWorkflow } from './workflows/refresh';
+// @ts-ignore
+import manifest from '__STATIC_CONTENT_MANIFEST';
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 
@@ -31,8 +33,8 @@ app.get('/api/meta', async (c) => {
 });
 
 // Serve frontend assets
-app.use('/assets/*', serveStatic({ root: './public' }));
-app.get('/*', serveStatic({ path: './public/app.html' }));
+app.use('/assets/*', serveStatic({ root: './', manifest }));
+app.get('/*', serveStatic({ path: 'index.html', manifest }));
 
 export default app;
 export { RefreshInventoryWorkflow };
