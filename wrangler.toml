@@ -23,7 +23,7 @@ binding = "REFRESH_WORKFLOW"
 class_name = "RefreshInventoryWorkflow"
 
 [triggers]
-crons = ["*/15 * * * *", "0 * * * *", "0 0 * * *"]
+crons = ["*/15 * * * *"]
 
 [site]
 bucket = "./public"
