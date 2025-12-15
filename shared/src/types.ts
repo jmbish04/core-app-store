@@ -21,7 +21,7 @@ export interface WorkerEnv {
   DB: D1Database;
   CACHE: KVNamespace;
   AI: Ai;
-  WORKFLOWS: any;
+  WORKFLOWS: Service;
   ANALYTICS?: AnalyticsEngineDataset;
   CLOUDFLARE_API_TOKEN: string;
   CLOUDFLARE_ACCOUNT_ID: string;
