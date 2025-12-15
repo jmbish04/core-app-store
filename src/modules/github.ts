@@ -114,7 +114,7 @@ export class GitHubClient {
         repo,
         path: fileContent.path,
         message: fileContent.message,
-        content: Buffer.from(fileContent.content).toString('base64'),
+        content: btoa(fileContent.content),
         branch: fileContent.branch,
         sha,
       });
@@ -172,7 +172,7 @@ export class GitHubClient {
       });
 
       if ('content' in data) {
-        return Buffer.from(data.content, 'base64').toString('utf-8');
+        return atob(data.content);
       }
       return null;
     } catch (error: any) {

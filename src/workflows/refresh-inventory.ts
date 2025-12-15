@@ -18,12 +18,14 @@ export async function refreshInventory(env: WorkerEnv, fullReconcile: boolean = 
   console.log(`Starting inventory refresh job ${jobId}, full reconcile: ${fullReconcile}`);
 
   try {
-    // Update job status to running
-    await env.DB.prepare(`
-      INSERT INTO refresh_jobs (id, status, started_at)
-      VALUES (?, 'running', ?)
-      ON CONFLICT(id) DO UPDATE SET status = 'running'
-    `).bind(jobId, startTime).run();
+    const prisma = getPrismaClient(env.DB);
+
+    // Create job status as running
+    await prisma.refreshJob.upsert({
+      where: { id: jobId },
+      update: { status: 'running' },
+      create: { id: jobId, status: 'running', startedAt: startTime },
+    });
 
     const useMock = env.MOCK_CLOUDFLARE_API === 'true';
     const cfClient = useMock
@@ -182,29 +184,29 @@ export async function refreshInventory(env: WorkerEnv, fullReconcile: boolean = 
     }
 
     // Update job status to completed
-    await env.DB.prepare(`
-      UPDATE refresh_jobs
-      SET status = 'completed', finished_at = ?, stats_json = ?
-      WHERE id = ?
-    `).bind(
-      new Date().toISOString(),
-      JSON.stringify(stats),
-      jobId
-    ).run();
+    await prisma.refreshJob.update({
+      where: { id: jobId },
+      data: {
+        status: 'completed',
+        finishedAt: new Date().toISOString(),
+        statsJson: JSON.stringify(stats),
+      },
+    });
 
     console.log(`Inventory refresh completed. Stats:`, stats);
   } catch (error: any) {
     console.error(`Inventory refresh failed:`, error);
 
+    const prisma = getPrismaClient(env.DB);
+
     // Update job status to failed
-    await env.DB.prepare(`
-      UPDATE refresh_jobs
-      SET status = 'failed', finished_at = ?, error_json = ?
-      WHERE id = ?
-    `).bind(
-      new Date().toISOString(),
-      JSON.stringify({ message: error.message, stack: error.stack }),
-      jobId
-    ).run();
+    await prisma.refreshJob.update({
+      where: { id: jobId },
+      data: {
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        errorJson: JSON.stringify({ message: error.message, stack: error.stack }),
+      },
+    });
   }
 }

@@ -1,3 +1,5 @@
+/// <reference types="@cloudflare/workers-types" />
+
 // Core types used across frontend and backend
 
 export type AppType = 'worker' | 'pages';
@@ -21,7 +23,7 @@ export interface WorkerEnv {
   DB: D1Database;
   CACHE: KVNamespace;
   AI: Ai;
-  WORKFLOWS: Service;
+  WORKFLOWS?: any; // Optional - currently in beta
   ANALYTICS?: AnalyticsEngineDataset;
   CLOUDFLARE_API_TOKEN: string;
   CLOUDFLARE_ACCOUNT_ID: string;

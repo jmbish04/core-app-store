@@ -10,7 +10,7 @@ import { formatDate } from '@/lib/utils';
 import type { AppListItem } from '@shared/schemas/app';
 
 export function LandingPage() {
-  const { data, isLoading, refetch, isRefetching } = useQuery({
+  const { data, isLoading, isRefetching } = useQuery({
     queryKey: ['starred-apps'],
     queryFn: () => api.getStarredApps(),
   });

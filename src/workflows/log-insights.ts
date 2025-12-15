@@ -8,6 +8,7 @@ import type { WorkerEnv } from '@core-app-store/shared';
 import { PrismaDatabaseService as DatabaseService } from '../modules/database';
 import { AIService } from '../modules/ai-service';
 import { getPrismaClient } from '../modules/prisma';
+import type { LogEvent } from '@prisma/client';
 
 export async function generateLogInsights(env: WorkerEnv): Promise<void> {
   console.log('Starting log insights generation');
@@ -15,42 +16,46 @@ export async function generateLogInsights(env: WorkerEnv): Promise<void> {
   try {
     const db = new DatabaseService(env.DB);
     const ai = new AIService(env.AI);
+    const prisma = getPrismaClient(env.DB);
 
-    // Get apps that have had recent activity or are broken
-    const query = `
-      SELECT * FROM apps
-      WHERE health_status = 'broken'
-         OR last_log_at > datetime('now', '-24 hours')
-         OR last_deployed_at > datetime('now', '-24 hours')
-      ORDER BY last_log_at DESC
-      LIMIT 50
-    `;
-    const result = await env.DB.prepare(query).all();
-    const apps = result.results;
+    // Get apps that have had recent activity or are broken using Prisma
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const apps = await prisma.app.findMany({
+      where: {
+        OR: [
+          { healthStatus: 'broken' },
+          { lastLogAt: { gte: twentyFourHoursAgo } },
+          { lastDeployedAt: { gte: twentyFourHoursAgo } },
+        ],
+      },
+      orderBy: { lastLogAt: 'desc' },
+      take: 50,
+    });
 
     console.log(`Generating insights for ${apps.length} apps`);
 
     for (const app of apps) {
       try {
-        // Get recent log events for this app
-        const logsQuery = `
-          SELECT * FROM log_events
-          WHERE app_id = ?
-          AND ts > datetime('now', '-24 hours')
-          ORDER BY ts DESC
-          LIMIT 100
-        `;
-        const logsResult = await env.DB.prepare(logsQuery).bind(app.id).all();
+        // Get recent log events for this app using Prisma
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const logEvents = await prisma.logEvent.findMany({
+          where: {
+            appId: app.id,
+            ts: { gte: twentyFourHoursAgo },
+          },
+          orderBy: { ts: 'desc' },
+          take: 100,
+        });
 
-        if (logsResult.results.length === 0) {
+        if (logEvents.length === 0) {
           console.log(`No recent logs for app ${app.name}, skipping`);
           continue;
         }
 
         // Generate insights
         const insights = await ai.analyzeLogInsights({
-          app_name: app.name as string,
-          log_samples: logsResult.results.map((log: any) => ({
+          app_name: app.name,
+          log_samples: logEvents.map((log: LogEvent) => ({
             ts: log.ts,
             level: log.level,
             message: log.message,

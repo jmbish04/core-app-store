@@ -26,7 +26,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: response.statusText }));
+    const error = await response.json().catch(() => ({ message: response.statusText })) as { message?: string };
     throw new Error(error.message || 'API request failed');
   }
 

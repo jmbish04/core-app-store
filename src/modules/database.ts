@@ -5,7 +5,7 @@
  * No raw SQL - all operations use Prisma Client.
  */
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, type App, type Deployment } from '@prisma/client';
 import { nanoid } from 'nanoid';
 import type { AppListItem } from '@core-app-store/shared';
 import { getPrismaClient } from './prisma';
@@ -239,7 +239,7 @@ export class PrismaDatabaseService {
     ]);
 
     return {
-      deployments: deployments.map(d => ({
+      deployments: deployments.map((d: Deployment) => ({
         ...d,
         app_id: d.appId,
         cf_deployment_id: d.cfDeploymentId,
@@ -383,12 +383,12 @@ export class PrismaDatabaseService {
     ]);
 
     const healthDistribution: Record<string, number> = {};
-    healthStats.forEach(stat => {
+    healthStats.forEach((stat: { healthStatus: string; _count: number }) => {
       healthDistribution[stat.healthStatus] = stat._count;
     });
 
     const categoriesDistribution: Record<string, number> = {};
-    categoryStats.forEach(stat => {
+    categoryStats.forEach((stat: { category: string | null; _count: number }) => {
       if (stat.category) {
         categoriesDistribution[stat.category] = stat._count;
       }
@@ -426,7 +426,7 @@ export class PrismaDatabaseService {
 
   // Helper methods
 
-  private enrichApp(app: any): AppListItem {
+  private enrichApp(app: App): AppListItem {
     return {
       ...app,
       cf_id: app.cfId,

@@ -120,7 +120,7 @@ apiRoutes.post('/apps/:id/refresh', async (c) => {
       return c.json({ error: 'Not Found', message: 'App not found' }, 404);
     }
 
-    // Refresh this specific app
+    // Refresh this specific app from Cloudflare API
     const useMock = c.env.MOCK_CLOUDFLARE_API === 'true';
     const cfClient = useMock
       ? new MockCloudflareAPIClient()
@@ -129,9 +129,59 @@ apiRoutes.post('/apps/:id/refresh', async (c) => {
           accountId: c.env.CLOUDFLARE_ACCOUNT_ID,
         });
 
-    // TODO: Implement single app refresh logic
-    // For now, just return success
-    return c.json({ success: true, message: 'App refresh queued' });
+    // Fetch latest data from Cloudflare
+    if (app.type === 'worker') {
+      const workers = await cfClient.listWorkers();
+      const worker = workers.find(w => w.id === app.cf_id);
+
+      if (worker) {
+        await db.upsertApp({
+          type: 'worker',
+          cf_id: worker.id,
+          name: worker.name,
+          account_id: c.env.CLOUDFLARE_ACCOUNT_ID,
+          deployed_url: worker.routes?.[0]?.pattern ? `https://${worker.routes[0].pattern}` : null,
+          last_deployed_at: worker.modified_on,
+          health_status: app.health_status,
+          health_score: app.health_score,
+        });
+      }
+    } else if (app.type === 'pages') {
+      const projects = await cfClient.listPagesProjects();
+      const project = projects.find(p => p.id === app.cf_id);
+
+      if (project) {
+        await db.upsertApp({
+          type: 'pages',
+          cf_id: project.id,
+          name: project.name,
+          account_id: c.env.CLOUDFLARE_ACCOUNT_ID,
+          deployed_url: project.production_deployment?.url || `https://${project.subdomain}.pages.dev`,
+          last_deployed_at: project.production_deployment?.created_on || project.created_on,
+          health_status: app.health_status,
+          health_score: app.health_score,
+        });
+
+        // Refresh recent deployments
+        const deployments = await cfClient.listPagesDeployments(project.name);
+        for (const deployment of deployments.slice(0, 5)) {
+          await db.upsertDeployment({
+            app_id: app.id,
+            cf_deployment_id: deployment.id,
+            status: deployment.latest_stage.status,
+            created_at: deployment.created_on,
+            metadata_json: JSON.stringify({
+              environment: deployment.environment,
+              url: deployment.url,
+              commit_hash: deployment.deployment_trigger.metadata?.commit_hash,
+              commit_message: deployment.deployment_trigger.metadata?.commit_message,
+            }),
+          });
+        }
+      }
+    }
+
+    return c.json({ success: true, message: 'App refreshed successfully' });
   } catch (error: any) {
     return c.json({ error: 'Internal Error', message: error.message }, 500);
   }
@@ -209,21 +259,20 @@ apiRoutes.post('/apps/:id/repo/link', async (c) => {
 // POST /api/refresh - Trigger full inventory refresh
 apiRoutes.post('/refresh', async (c) => {
   try {
-    // Create refresh job
-    const jobId = nanoid();
-    const query = `
-      INSERT INTO refresh_jobs (id, status, started_at)
-      VALUES (?, 'pending', ?)
-    `;
-    await c.env.DB.prepare(query).bind(jobId, new Date().toISOString()).run();
+    const fullReconcile = c.req.query('full_reconcile') === 'true';
 
-    // TODO: Trigger workflow for background refresh
-    // For now, just return the job ID
+    // Trigger the refresh inventory workflow
+    // Note: Workflows run asynchronously and manage their own job tracking
+    if (c.env.WORKFLOWS) {
+      await c.env.WORKFLOWS.get('refresh-inventory').create({
+        params: { fullReconcile },
+      });
+    }
 
     return c.json({
-      job_id: jobId,
-      status: 'pending',
-      message: 'Inventory refresh queued',
+      status: 'triggered',
+      message: 'Inventory refresh workflow triggered',
+      full_reconcile: fullReconcile,
     });
   } catch (error: any) {
     return c.json({ error: 'Internal Error', message: error.message }, 500);

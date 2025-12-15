@@ -7,17 +7,17 @@
 
 import type { WorkerEnv } from '@core-app-store/shared';
 import { PrismaDatabaseService as DatabaseService } from '../modules/database';
+import { getPrismaClient } from '../modules/prisma';
 
 export async function updateHealthScores(env: WorkerEnv): Promise<void> {
   console.log('Starting health score update');
 
   try {
     const db = new DatabaseService(env.DB);
+    const prisma = getPrismaClient(env.DB);
 
-    // Get all apps
-    const query = `SELECT * FROM apps`;
-    const result = await env.DB.prepare(query).all();
-    const apps = result.results;
+    // Get all apps using Prisma
+    const apps = await prisma.app.findMany();
 
     console.log(`Updating health for ${apps.length} apps`);
 
@@ -90,17 +90,19 @@ async function calculateAppHealth(app: any, env: WorkerEnv): Promise<{
     }
   }
 
-  // Check for recent errors from log insights
-  const insightQuery = `
-    SELECT * FROM log_insights
-    WHERE app_id = ?
-    AND generated_at > datetime('now', '-24 hours')
-  `;
-  const insight = await env.DB.prepare(insightQuery).bind(app.id).first();
+  // Check for recent errors from log insights using Prisma
+  const prisma = getPrismaClient(env.DB);
+  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const insight = await prisma.logInsight.findFirst({
+    where: {
+      appId: app.id,
+      generatedAt: { gte: twentyFourHoursAgo },
+    },
+  });
 
   if (insight) {
     try {
-      const topErrors = JSON.parse(insight.top_errors_json as string || '[]');
+      const topErrors = JSON.parse(insight.topErrorsJson as string || '[]');
       if (topErrors.length > 0) {
         const criticalErrors = topErrors.filter((e: any) => e.severity === 'critical' || e.severity === 'high');
         if (criticalErrors.length > 0) {
@@ -116,14 +118,11 @@ async function calculateAppHealth(app: any, env: WorkerEnv): Promise<{
     }
   }
 
-  // Check deployment status
-  const deploymentQuery = `
-    SELECT * FROM deployments
-    WHERE app_id = ?
-    ORDER BY created_at DESC
-    LIMIT 1
-  `;
-  const lastDeployment = await env.DB.prepare(deploymentQuery).bind(app.id).first();
+  // Check deployment status using Prisma
+  const lastDeployment = await prisma.deployment.findFirst({
+    where: { appId: app.id },
+    orderBy: { createdAt: 'desc' },
+  });
 
   if (lastDeployment) {
     if (lastDeployment.status === 'success') {

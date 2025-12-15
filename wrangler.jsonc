@@ -3,7 +3,7 @@
   "name": "core-app-store",
   "main": "src/index.ts",
   "compatibility_date": "2024-12-14",
-  "node_compat": true,
+  "compatibility_flags": ["nodejs_compat"],
 
   "observability": {
     "enabled": true
@@ -35,13 +35,15 @@
     "binding": "AI"
   },
 
-  // Workflows binding (currently in beta)
-  "workflows": [
-    {
-      "binding": "WORKFLOWS",
-      "name": "core-app-store-workflows"
-    }
-  ],
+  // Workflows binding (currently in beta - temporarily disabled)
+  // TODO: Implement WorkflowEntrypoint classes and re-enable
+  // "workflows": [
+  //   {
+  //     "binding": "WORKFLOWS",
+  //     "name": "core-app-store-workflows",
+  //     "class_name": "RefreshInventoryWorkflow"
+  //   }
+  // ],
 
   // Cron triggers for background jobs
   "triggers": {

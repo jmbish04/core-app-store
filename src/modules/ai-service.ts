@@ -88,7 +88,7 @@ export class AIService {
     const prompt = this.buildCategorizationPrompt(input);
 
     try {
-      const response = await this.ai.run('@cf/meta/llama-3.1-8b-instruct', {
+      const response = await this.ai.run('@cf/meta/llama-3.1-8b-instruct' as any, {
         prompt,
         max_tokens: 512,
       }) as { response: string };
@@ -114,7 +114,7 @@ export class AIService {
     const prompt = this.buildLogInsightPrompt(input);
 
     try {
-      const response = await this.ai.run('@cf/meta/llama-3.1-8b-instruct', {
+      const response = await this.ai.run('@cf/meta/llama-3.1-8b-instruct' as any, {
         prompt,
         max_tokens: 1024,
       }) as { response: string };
@@ -140,7 +140,7 @@ export class AIService {
     const prompt = this.buildPlanPrompt(input);
 
     try {
-      const response = await this.ai.run('@cf/meta/llama-3.1-8b-instruct', {
+      const response = await this.ai.run('@cf/meta/llama-3.1-8b-instruct' as any, {
         prompt,
         max_tokens: 2048,
       }) as { response: string };
