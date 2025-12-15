@@ -3,7 +3,7 @@ import { LandingPage } from './pages/Landing';
 import { AllAppsPage } from './pages/AllApps';
 import { AppDetailPage } from './pages/AppDetail';
 import { CreateNewPage } from './pages/CreateNew';
-import { Package, Plus, Home, Menu } from 'lucide-react';
+import { Package, Plus, Home } from 'lucide-react';
 import { Button } from './components/ui/button';
 
 function App() {
