@@ -436,7 +436,7 @@ export class DatabaseService {
   }
 
   private extractRepoFullName(url: string): string {
-    const match = url.match(/github\.com\/([^\/]+\/[^\/\.]+)/);
+    const match = url.match(/github\.com\/([^\/]+\/[^\/\s#?]+)/);
     return match ? match[1] : url;
   }
 }
