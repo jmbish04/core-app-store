@@ -8,10 +8,11 @@
     "dev:frontend": "npm run dev --workspace=frontend",
     "dev:backend": "npm run dev --workspace=backend",
     "build": "npm run build --workspaces",
-    "deploy": "npm run deploy --workspace=backend",
-    "db:migrate": "wrangler d1 migrations apply DB --remote", // [2025-12-15] Set by jmbish04 (repo owner)
-    "db:migrate:local": "wrangler d1 migrations apply DB --local", // [2025-12-15] Set by jmbish04 (repo owner)
-    "db:create": "wrangler d1 create core-app-store", // [2025-12-15] Set by jmbish04 (repo owner)
+    "prisma:generate": "prisma generate --schema=./prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate dev --schema=./prisma/schema.prisma --name",
+    "prisma:deploy": "prisma migrate deploy --schema=./prisma/schema.prisma",
+    "deploy": "npm run build && cd src && wrangler deploy",
+    "deploy:dry-run": "npm run build && cd src && wrangler deploy --dry-run",
     "test": "npm run test --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present"
   },
@@ -20,9 +21,14 @@
     "frontend",
     "shared"
   ],
+  "dependencies": {
+    "@prisma/client": "^6.1.0",
+    "@prisma/adapter-d1": "^6.1.0"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",
+    "prisma": "^6.1.0",
     "typescript": "^5.7.2",
-    "wrangler": "^3.96.0"
+    "wrangler": "^4.54.0"
   }
 }

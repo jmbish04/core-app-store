@@ -10,7 +10,7 @@ import {
   bootstrapRequestSchema,
   createCloudflareAppRequestSchema,
 } from '@core-app-store/shared';
-import { DatabaseService } from '../modules/database';
+import { PrismaDatabaseService as DatabaseService } from '../modules/database';
 import { CloudflareAPIClient, MockCloudflareAPIClient } from '../modules/cloudflare-api';
 import { GitHubClient, MockGitHubClient } from '../modules/github';
 import { AIService } from '../modules/ai-service';

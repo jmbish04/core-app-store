@@ -7,8 +7,9 @@
 import { nanoid } from 'nanoid';
 import type { WorkerEnv } from '@core-app-store/shared';
 import { CloudflareAPIClient, MockCloudflareAPIClient } from '../modules/cloudflare-api';
-import { DatabaseService } from '../modules/database';
+import { PrismaDatabaseService as DatabaseService } from '../modules/database';
 import { AIService } from '../modules/ai-service';
+import { getPrismaClient } from '../modules/prisma';
 
 export async function refreshInventory(env: WorkerEnv, fullReconcile: boolean = false): Promise<void> {
   const jobId = nanoid();

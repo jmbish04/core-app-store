@@ -6,7 +6,7 @@
  */
 
 import type { WorkerEnv } from '@core-app-store/shared';
-import { DatabaseService } from '../modules/database';
+import { PrismaDatabaseService as DatabaseService } from '../modules/database';
 
 export async function updateHealthScores(env: WorkerEnv): Promise<void> {
   console.log('Starting health score update');

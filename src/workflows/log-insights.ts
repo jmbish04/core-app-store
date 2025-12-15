@@ -5,8 +5,9 @@
  */
 
 import type { WorkerEnv } from '@core-app-store/shared';
-import { DatabaseService } from '../modules/database';
+import { PrismaDatabaseService as DatabaseService } from '../modules/database';
 import { AIService } from '../modules/ai-service';
+import { getPrismaClient } from '../modules/prisma';
 
 export async function generateLogInsights(env: WorkerEnv): Promise<void> {
   console.log('Starting log insights generation');

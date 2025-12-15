@@ -1,0 +1,176 @@
+// Prisma schema for Core App Store
+// Database: Cloudflare D1 (SQLite)
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// Apps table: Central registry of all Cloudflare Workers and Pages projects
+model App {
+  id                          String   @id
+  type                        String   // 'worker' or 'pages'
+  cfId                        String   @map("cf_id")
+  name                        String
+  displayName                 String?  @map("display_name")
+  accountId                   String   @map("account_id")
+  starred                     Boolean  @default(false)
+  category                    String?  // 'prod', 'tooling', 'personal', 'infra', 'experiments', 'other'
+  tagsJson                    String?  @map("tags_json")
+  aiSummary                   String?  @map("ai_summary")
+  deployedUrl                 String?  @map("deployed_url")
+  lastDeployedAt              String?  @map("last_deployed_at")
+  lastLogAt                   String?  @map("last_log_at")
+  lastRunAt                   String?  @map("last_run_at")
+  lastSeenAt                  String?  @map("last_seen_at")
+  healthStatus                String   @default("unknown") @map("health_status") // 'working', 'broken', 'unknown'
+  healthScore                 Int      @default(0) @map("health_score")
+  healthReasonsJson           String?  @map("health_reasons_json")
+  repoLinksJson               String?  @map("repo_links_json")
+  repoInferenceEvidenceJson   String?  @map("repo_inference_evidence_json")
+  createdAt                   String   @default("CURRENT_TIMESTAMP") @map("created_at")
+  updatedAt                   String   @default("CURRENT_TIMESTAMP") @map("updated_at")
+
+  // Relations
+  deployments  Deployment[]
+  logEvents    LogEvent[]
+  logInsights  LogInsight?
+  appVisits    AppVisit[]
+  appRepoLinks AppRepoLink[]
+
+  @@unique([cfId, type], name: "idx_apps_cf_id_type")
+  @@index([type], name: "idx_apps_type")
+  @@index([starred], name: "idx_apps_starred")
+  @@index([healthStatus], name: "idx_apps_health_status")
+  @@index([category], name: "idx_apps_category")
+  @@index([updatedAt], name: "idx_apps_updated_at")
+  @@index([lastDeployedAt], name: "idx_apps_last_deployed_at")
+  @@index([lastLogAt], name: "idx_apps_last_log_at")
+  @@index([healthScore], name: "idx_apps_health_score")
+  @@map("apps")
+}
+
+// Deployments table: Track deployment history
+model Deployment {
+  id             String  @id
+  appId          String  @map("app_id")
+  cfDeploymentId String  @unique @map("cf_deployment_id")
+  status         String
+  createdAt      String  @default("CURRENT_TIMESTAMP") @map("created_at")
+  metadataJson   String? @map("metadata_json")
+
+  // Relations
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([appId], name: "idx_deployments_app_id")
+  @@index([createdAt], name: "idx_deployments_created_at")
+  @@map("deployments")
+}
+
+// Log events table: Sampled/structured logs to control volume
+model LogEvent {
+  id          String  @id
+  appId       String  @map("app_id")
+  ts          String
+  level       String
+  message     String
+  fingerprint String?
+  metaJson    String? @map("meta_json")
+
+  // Relations
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([appId], name: "idx_log_events_app_id")
+  @@index([ts], name: "idx_log_events_ts")
+  @@index([level], name: "idx_log_events_level")
+  @@index([fingerprint], name: "idx_log_events_fingerprint")
+  @@map("log_events")
+}
+
+// Log insights table: AI-generated analysis of logs
+model LogInsight {
+  appId                String @id @map("app_id")
+  generatedAt          String @map("generated_at")
+  summary              String
+  topErrorsJson        String @map("top_errors_json")
+  suggestedActionsJson String @map("suggested_actions_json")
+  modelInfoJson        String @map("model_info_json")
+
+  // Relations
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([generatedAt], name: "idx_log_insights_generated_at")
+  @@map("log_insights")
+}
+
+// Refresh jobs table: Track background sync operations
+model RefreshJob {
+  id         String  @id
+  status     String  // 'pending', 'running', 'completed', 'failed'
+  startedAt  String  @default("CURRENT_TIMESTAMP") @map("started_at")
+  finishedAt String? @map("finished_at")
+  statsJson  String? @map("stats_json")
+  errorJson  String? @map("error_json")
+
+  @@index([status], name: "idx_refresh_jobs_status")
+  @@index([startedAt], name: "idx_refresh_jobs_started_at")
+  @@map("refresh_jobs")
+}
+
+// App visits table: Track when users view apps
+model AppVisit {
+  id        String  @id
+  appId     String  @map("app_id")
+  ts        String  @default("CURRENT_TIMESTAMP")
+  userAgent String? @map("user_agent")
+  path      String?
+
+  // Relations
+  app App @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([appId], name: "idx_app_visits_app_id")
+  @@index([ts], name: "idx_app_visits_ts")
+  @@map("app_visits")
+}
+
+// GitHub repos table: Track linked repositories
+model GitHubRepo {
+  id            String  @id
+  fullName      String  @unique @map("full_name")
+  url           String
+  defaultBranch String? @map("default_branch")
+  visibility    String?
+  createdAt     String  @default("CURRENT_TIMESTAMP") @map("created_at")
+  metaJson      String? @map("meta_json")
+
+  // Relations
+  appRepoLinks AppRepoLink[]
+
+  @@index([fullName], name: "idx_github_repos_full_name")
+  @@map("github_repos")
+}
+
+// App-repo links table: Many-to-many relationship between apps and repos
+model AppRepoLink {
+  appId        String  @map("app_id")
+  repoId       String  @map("repo_id")
+  linkType     String  @map("link_type") // 'manual' or 'inferred'
+  confidence   Float?
+  evidenceJson String? @map("evidence_json")
+  createdAt    String  @default("CURRENT_TIMESTAMP") @map("created_at")
+
+  // Relations
+  app  App        @relation(fields: [appId], references: [id], onDelete: Cascade)
+  repo GitHubRepo @relation(fields: [repoId], references: [id], onDelete: Cascade)
+
+  @@id([appId, repoId])
+  @@index([appId], name: "idx_app_repo_links_app_id")
+  @@index([repoId], name: "idx_app_repo_links_repo_id")
+  @@index([linkType], name: "idx_app_repo_links_link_type")
+  @@map("app_repo_links")
+}

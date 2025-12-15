@@ -1,14 +1,21 @@
 /**
- * Database Service Layer
+ * Prisma Database Service Layer
  *
- * Handles all D1 database operations with type safety and proper error handling.
+ * Handles all D1 database operations using Prisma ORM with type safety.
+ * No raw SQL - all operations use Prisma Client.
  */
 
+import { PrismaClient } from '@prisma/client';
 import { nanoid } from 'nanoid';
-import type { App, AppListItem, Deployment, LogEvent, LogInsight } from '@core-app-store/shared';
+import type { AppListItem } from '@core-app-store/shared';
+import { getPrismaClient } from './prisma';
 
-export class DatabaseService {
-  constructor(private db: D1Database) {}
+export class PrismaDatabaseService {
+  private prisma: PrismaClient;
+
+  constructor(db: D1Database) {
+    this.prisma = getPrismaClient(db);
+  }
 
   // Apps operations
 
@@ -26,66 +33,63 @@ export class DatabaseService {
   }): Promise<{ apps: AppListItem[]; total: number }> {
     const page = filters.page || 1;
     const perPage = filters.per_page || 20;
-    const offset = (page - 1) * perPage;
-    const sortBy = filters.sort_by || 'updated_at';
+    const skip = (page - 1) * perPage;
+    const sortBy = filters.sort_by || 'updatedAt';
     const sortOrder = filters.sort_order || 'desc';
 
-    let whereClause: string[] = [];
-    let params: any[] = [];
+    // Build where clause
+    const where: any = {};
 
     if (filters.search) {
-      whereClause.push('(name LIKE ? OR display_name LIKE ? OR ai_summary LIKE ?)');
-      const searchPattern = `%${filters.search}%`;
-      params.push(searchPattern, searchPattern, searchPattern);
+      where.OR = [
+        { name: { contains: filters.search } },
+        { displayName: { contains: filters.search } },
+        { aiSummary: { contains: filters.search } },
+      ];
     }
 
     if (filters.type) {
-      whereClause.push('type = ?');
-      params.push(filters.type);
+      where.type = filters.type;
     }
 
     if (filters.category) {
-      whereClause.push('category = ?');
-      params.push(filters.category);
+      where.category = filters.category;
     }
 
     if (filters.health) {
-      whereClause.push('health_status = ?');
-      params.push(filters.health);
+      where.healthStatus = filters.health;
     }
 
     if (filters.starred !== undefined) {
-      whereClause.push('starred = ?');
-      params.push(filters.starred ? 1 : 0);
+      where.starred = filters.starred;
     }
 
     if (filters.has_repo !== undefined) {
       if (filters.has_repo) {
-        whereClause.push('repo_links_json IS NOT NULL');
+        where.repoLinksJson = { not: null };
       } else {
-        whereClause.push('repo_links_json IS NULL');
+        where.repoLinksJson = null;
       }
     }
 
-    const where = whereClause.length > 0 ? `WHERE ${whereClause.join(' AND ')}` : '';
-
     // Get total count
-    const countQuery = `SELECT COUNT(*) as count FROM apps ${where}`;
-    const countResult = await this.db.prepare(countQuery).bind(...params).first<{ count: number }>();
-    const total = countResult?.count || 0;
+    const total = await this.prisma.app.count({ where });
 
-    // Get apps
-    const appsQuery = `
-      SELECT * FROM apps
-      ${where}
-      ORDER BY ${sortBy} ${sortOrder.toUpperCase()}
-      LIMIT ? OFFSET ?
-    `;
-    const appsResult = await this.db.prepare(appsQuery).bind(...params, perPage, offset).all<App>();
+    // Get apps with proper sorting
+    const orderBy: any = {};
+    orderBy[sortBy] = sortOrder;
 
-    const apps = appsResult.results.map(app => this.enrichApp(app));
+    const apps = await this.prisma.app.findMany({
+      where,
+      orderBy,
+      skip,
+      take: perPage,
+    });
 
-    return { apps, total };
+    return {
+      apps: apps.map(app => this.enrichApp(app)),
+      total,
+    };
   }
 
   async getStarredApps(): Promise<{
@@ -93,100 +97,90 @@ export class DatabaseService {
     recently_active: AppListItem[];
     broken_now: AppListItem[];
   }> {
-    const starredQuery = `
-      SELECT * FROM apps
-      WHERE starred = 1
-      ORDER BY updated_at DESC
-      LIMIT 20
-    `;
-    const starred = await this.db.prepare(starredQuery).all<App>();
-
-    const recentlyActiveQuery = `
-      SELECT * FROM apps
-      ORDER BY COALESCE(last_log_at, last_deployed_at, last_run_at, updated_at) DESC
-      LIMIT 10
-    `;
-    const recentlyActive = await this.db.prepare(recentlyActiveQuery).all<App>();
-
-    const brokenQuery = `
-      SELECT * FROM apps
-      WHERE health_status = 'broken'
-      ORDER BY updated_at DESC
-      LIMIT 5
-    `;
-    const broken = await this.db.prepare(brokenQuery).all<App>();
+    const [starred, recentlyActive, broken] = await Promise.all([
+      this.prisma.app.findMany({
+        where: { starred: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 20,
+      }),
+      this.prisma.app.findMany({
+        orderBy: { lastLogAt: 'desc' },
+        take: 10,
+      }),
+      this.prisma.app.findMany({
+        where: { healthStatus: 'broken' },
+        orderBy: { updatedAt: 'desc' },
+        take: 5,
+      }),
+    ]);
 
     return {
-      starred: starred.results.map(app => this.enrichApp(app)),
-      recently_active: recentlyActive.results.map(app => this.enrichApp(app)),
-      broken_now: broken.results.map(app => this.enrichApp(app)),
+      starred: starred.map(app => this.enrichApp(app)),
+      recently_active: recentlyActive.map(app => this.enrichApp(app)),
+      broken_now: broken.map(app => this.enrichApp(app)),
     };
   }
 
   async getApp(id: string): Promise<AppListItem | null> {
-    const query = `SELECT * FROM apps WHERE id = ?`;
-    const result = await this.db.prepare(query).bind(id).first<App>();
-    return result ? this.enrichApp(result) : null;
+    const app = await this.prisma.app.findUnique({
+      where: { id },
+    });
+
+    return app ? this.enrichApp(app) : null;
   }
 
-  async upsertApp(app: Partial<App> & { cf_id: string; type: string; name: string }): Promise<App> {
-    const id = app.id || nanoid();
+  async upsertApp(appData: any): Promise<any> {
+    const id = appData.id || nanoid();
     const now = new Date().toISOString();
 
-    const query = `
-      INSERT INTO apps (
-        id, type, cf_id, name, display_name, account_id,
-        starred, category, tags_json, ai_summary,
-        deployed_url, last_deployed_at, last_log_at, last_run_at, last_seen_at,
-        health_status, health_score, health_reasons_json,
-        repo_links_json, repo_inference_evidence_json,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        name = excluded.name,
-        display_name = excluded.display_name,
-        deployed_url = excluded.deployed_url,
-        last_deployed_at = excluded.last_deployed_at,
-        last_log_at = excluded.last_log_at,
-        last_run_at = excluded.last_run_at,
-        health_status = excluded.health_status,
-        health_score = excluded.health_score,
-        health_reasons_json = excluded.health_reasons_json,
-        updated_at = excluded.updated_at
-    `;
+    const app = await this.prisma.app.upsert({
+      where: { id },
+      create: {
+        id,
+        type: appData.type,
+        cfId: appData.cf_id || appData.cfId,
+        name: appData.name,
+        displayName: appData.display_name || appData.displayName,
+        accountId: appData.account_id || appData.accountId || '',
+        starred: appData.starred || false,
+        category: appData.category,
+        tagsJson: appData.tags_json || appData.tagsJson,
+        aiSummary: appData.ai_summary || appData.aiSummary,
+        deployedUrl: appData.deployed_url || appData.deployedUrl,
+        lastDeployedAt: appData.last_deployed_at || appData.lastDeployedAt,
+        lastLogAt: appData.last_log_at || appData.lastLogAt,
+        lastRunAt: appData.last_run_at || appData.lastRunAt,
+        lastSeenAt: appData.last_seen_at || appData.lastSeenAt,
+        healthStatus: appData.health_status || appData.healthStatus || 'unknown',
+        healthScore: appData.health_score || appData.healthScore || 0,
+        healthReasonsJson: appData.health_reasons_json || appData.healthReasonsJson,
+        repoLinksJson: appData.repo_links_json || appData.repoLinksJson,
+        repoInferenceEvidenceJson: appData.repo_inference_evidence_json || appData.repoInferenceEvidenceJson,
+        createdAt: appData.created_at || appData.createdAt || now,
+        updatedAt: now,
+      },
+      update: {
+        name: appData.name,
+        displayName: appData.display_name || appData.displayName,
+        deployedUrl: appData.deployed_url || appData.deployedUrl,
+        lastDeployedAt: appData.last_deployed_at || appData.lastDeployedAt,
+        lastLogAt: appData.last_log_at || appData.lastLogAt,
+        lastRunAt: appData.last_run_at || appData.lastRunAt,
+        healthStatus: appData.health_status || appData.healthStatus || 'unknown',
+        healthScore: appData.health_score || appData.healthScore || 0,
+        healthReasonsJson: appData.health_reasons_json || appData.healthReasonsJson,
+        updatedAt: now,
+      },
+    });
 
-    await this.db.prepare(query).bind(
-      id,
-      app.type,
-      app.cf_id,
-      app.name,
-      app.display_name || null,
-      app.account_id || '',
-      app.starred ? 1 : 0,
-      app.category || null,
-      app.tags_json || null,
-      app.ai_summary || null,
-      app.deployed_url || null,
-      app.last_deployed_at || null,
-      app.last_log_at || null,
-      app.last_run_at || null,
-      app.last_seen_at || null,
-      app.health_status || 'unknown',
-      app.health_score || 0,
-      app.health_reasons_json || null,
-      app.repo_links_json || null,
-      app.repo_inference_evidence_json || null,
-      app.created_at || now,
-      now
-    ).run();
-
-    const result = await this.getApp(id);
-    return result as App;
+    return app;
   }
 
   async updateAppStarred(id: string, starred: boolean): Promise<void> {
-    const query = `UPDATE apps SET starred = ? WHERE id = ?`;
-    await this.db.prepare(query).bind(starred ? 1 : 0, id).run();
+    await this.prisma.app.update({
+      where: { id },
+      data: { starred },
+    });
   }
 
   async updateAppHealth(id: string, health: {
@@ -194,17 +188,14 @@ export class DatabaseService {
     score: number;
     reasons?: string[];
   }): Promise<void> {
-    const query = `
-      UPDATE apps
-      SET health_status = ?, health_score = ?, health_reasons_json = ?
-      WHERE id = ?
-    `;
-    await this.db.prepare(query).bind(
-      health.status,
-      health.score,
-      health.reasons ? JSON.stringify(health.reasons) : null,
-      id
-    ).run();
+    await this.prisma.app.update({
+      where: { id },
+      data: {
+        healthStatus: health.status,
+        healthScore: health.score,
+        healthReasonsJson: health.reasons ? JSON.stringify(health.reasons) : null,
+      },
+    });
   }
 
   async updateAppAI(id: string, ai: {
@@ -212,138 +203,154 @@ export class DatabaseService {
     tags?: string[];
     summary?: string;
   }): Promise<void> {
-    const updates: string[] = [];
-    const params: any[] = [];
+    const updateData: any = {};
 
     if (ai.category) {
-      updates.push('category = ?');
-      params.push(ai.category);
+      updateData.category = ai.category;
     }
     if (ai.tags) {
-      updates.push('tags_json = ?');
-      params.push(JSON.stringify(ai.tags));
+      updateData.tagsJson = JSON.stringify(ai.tags);
     }
     if (ai.summary) {
-      updates.push('ai_summary = ?');
-      params.push(ai.summary);
+      updateData.aiSummary = ai.summary;
     }
 
-    if (updates.length === 0) return;
-
-    const query = `UPDATE apps SET ${updates.join(', ')} WHERE id = ?`;
-    params.push(id);
-    await this.db.prepare(query).bind(...params).run();
+    if (Object.keys(updateData).length > 0) {
+      await this.prisma.app.update({
+        where: { id },
+        data: updateData,
+      });
+    }
   }
 
   // Deployments operations
 
-  async getDeployments(appId: string, page: number = 1, perPage: number = 10): Promise<{ deployments: Deployment[]; total: number }> {
-    const offset = (page - 1) * perPage;
+  async getDeployments(appId: string, page: number = 1, perPage: number = 10): Promise<{ deployments: any[]; total: number }> {
+    const skip = (page - 1) * perPage;
 
-    const countQuery = `SELECT COUNT(*) as count FROM deployments WHERE app_id = ?`;
-    const countResult = await this.db.prepare(countQuery).bind(appId).first<{ count: number }>();
-    const total = countResult?.count || 0;
+    const [deployments, total] = await Promise.all([
+      this.prisma.deployment.findMany({
+        where: { appId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: perPage,
+      }),
+      this.prisma.deployment.count({ where: { appId } }),
+    ]);
 
-    const query = `
-      SELECT * FROM deployments
-      WHERE app_id = ?
-      ORDER BY created_at DESC
-      LIMIT ? OFFSET ?
-    `;
-    const result = await this.db.prepare(query).bind(appId, perPage, offset).all<Deployment>();
-
-    return { deployments: result.results, total };
+    return {
+      deployments: deployments.map(d => ({
+        ...d,
+        app_id: d.appId,
+        cf_deployment_id: d.cfDeploymentId,
+        created_at: d.createdAt,
+        metadata_json: d.metadataJson,
+      })),
+      total,
+    };
   }
 
-  async upsertDeployment(deployment: Partial<Deployment> & { app_id: string; cf_deployment_id: string }): Promise<void> {
+  async upsertDeployment(deployment: any): Promise<void> {
     const id = deployment.id || nanoid();
     const now = new Date().toISOString();
 
-    const query = `
-      INSERT INTO deployments (id, app_id, cf_deployment_id, status, created_at, metadata_json)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(cf_deployment_id) DO UPDATE SET
-        status = excluded.status,
-        metadata_json = excluded.metadata_json
-    `;
-
-    await this.db.prepare(query).bind(
-      id,
-      deployment.app_id,
-      deployment.cf_deployment_id,
-      deployment.status || 'unknown',
-      deployment.created_at || now,
-      deployment.metadata_json || null
-    ).run();
+    await this.prisma.deployment.upsert({
+      where: { cfDeploymentId: deployment.cf_deployment_id || deployment.cfDeploymentId },
+      create: {
+        id,
+        appId: deployment.app_id || deployment.appId,
+        cfDeploymentId: deployment.cf_deployment_id || deployment.cfDeploymentId,
+        status: deployment.status || 'unknown',
+        createdAt: deployment.created_at || deployment.createdAt || now,
+        metadataJson: deployment.metadata_json || deployment.metadataJson,
+      },
+      update: {
+        status: deployment.status,
+        metadataJson: deployment.metadata_json || deployment.metadataJson,
+      },
+    });
   }
 
   // Log insights operations
 
-  async getLogInsight(appId: string): Promise<LogInsight | null> {
-    const query = `SELECT * FROM log_insights WHERE app_id = ? ORDER BY generated_at DESC LIMIT 1`;
-    const result = await this.db.prepare(query).bind(appId).first<LogInsight>();
-    return result;
+  async getLogInsight(appId: string): Promise<any | null> {
+    const insight = await this.prisma.logInsight.findUnique({
+      where: { appId },
+    });
+
+    if (!insight) return null;
+
+    return {
+      app_id: insight.appId,
+      generated_at: insight.generatedAt,
+      summary: insight.summary,
+      top_errors_json: insight.topErrorsJson,
+      suggested_actions_json: insight.suggestedActionsJson,
+      model_info_json: insight.modelInfoJson,
+    };
   }
 
-  async upsertLogInsight(insight: Omit<LogInsight, 'generated_at'> & { generated_at?: string }): Promise<void> {
+  async upsertLogInsight(insight: any): Promise<void> {
     const now = new Date().toISOString();
-    const query = `
-      INSERT INTO log_insights (app_id, generated_at, summary, top_errors_json, suggested_actions_json, model_info_json)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(app_id) DO UPDATE SET
-        generated_at = excluded.generated_at,
-        summary = excluded.summary,
-        top_errors_json = excluded.top_errors_json,
-        suggested_actions_json = excluded.suggested_actions_json,
-        model_info_json = excluded.model_info_json
-    `;
 
-    await this.db.prepare(query).bind(
-      insight.app_id,
-      insight.generated_at || now,
-      insight.summary,
-      insight.top_errors_json,
-      insight.suggested_actions_json,
-      insight.model_info_json
-    ).run();
+    await this.prisma.logInsight.upsert({
+      where: { appId: insight.app_id || insight.appId },
+      create: {
+        appId: insight.app_id || insight.appId,
+        generatedAt: insight.generated_at || insight.generatedAt || now,
+        summary: insight.summary,
+        topErrorsJson: insight.top_errors_json || insight.topErrorsJson,
+        suggestedActionsJson: insight.suggested_actions_json || insight.suggestedActionsJson,
+        modelInfoJson: insight.model_info_json || insight.modelInfoJson,
+      },
+      update: {
+        generatedAt: insight.generated_at || insight.generatedAt || now,
+        summary: insight.summary,
+        topErrorsJson: insight.top_errors_json || insight.topErrorsJson,
+        suggestedActionsJson: insight.suggested_actions_json || insight.suggestedActionsJson,
+        modelInfoJson: insight.model_info_json || insight.modelInfoJson,
+      },
+    });
   }
 
   // Repo linking operations
 
   async linkRepo(appId: string, repoUrl: string, linkType: 'manual' | 'inferred' = 'manual'): Promise<void> {
-    // First, get or create the repo record
-    const repoId = nanoid();
-    const repoQuery = `
-      INSERT INTO github_repos (id, full_name, url, created_at)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(full_name) DO NOTHING
-    `;
-
     const fullName = this.extractRepoFullName(repoUrl);
-    await this.db.prepare(repoQuery).bind(repoId, fullName, repoUrl, new Date().toISOString()).run();
+    const now = new Date().toISOString();
 
-    // Get the repo ID
-    const getRepoQuery = `SELECT id FROM github_repos WHERE full_name = ?`;
-    const repo = await this.db.prepare(getRepoQuery).bind(fullName).first<{ id: string }>();
+    // Create or get repo
+    const repo = await this.prisma.gitHubRepo.upsert({
+      where: { fullName },
+      create: {
+        id: nanoid(),
+        fullName,
+        url: repoUrl,
+        createdAt: now,
+      },
+      update: {},
+    });
 
-    if (!repo) return;
-
-    // Link app to repo
-    const linkQuery = `
-      INSERT INTO app_repo_links (app_id, repo_id, link_type, confidence, created_at)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(app_id, repo_id) DO UPDATE SET
-        link_type = excluded.link_type,
-        confidence = excluded.confidence
-    `;
-
-    await this.db.prepare(linkQuery).bind(
-      appId,
-      repo.id,
-      linkType,
-      linkType === 'manual' ? 1.0 : 0.8,
-      new Date().toISOString()
-    ).run();
+    // Create link
+    await this.prisma.appRepoLink.upsert({
+      where: {
+        appId_repoId: {
+          appId,
+          repoId: repo.id,
+        },
+      },
+      create: {
+        appId,
+        repoId: repo.id,
+        linkType,
+        confidence: linkType === 'manual' ? 1.0 : 0.8,
+        createdAt: now,
+      },
+      update: {
+        linkType,
+        confidence: linkType === 'manual' ? 1.0 : 0.8,
+      },
+    });
   }
 
   // Metadata operations
@@ -356,82 +363,92 @@ export class DatabaseService {
     last_refresh_at: string | null;
     categories_distribution: Record<string, number>;
   }> {
-    const totalQuery = `SELECT COUNT(*) as count FROM apps`;
-    const total = await this.db.prepare(totalQuery).first<{ count: number }>();
+    const [total, workers, pages, healthStats, categoryStats, lastRefresh] = await Promise.all([
+      this.prisma.app.count(),
+      this.prisma.app.count({ where: { type: 'worker' } }),
+      this.prisma.app.count({ where: { type: 'pages' } }),
+      this.prisma.app.groupBy({
+        by: ['healthStatus'],
+        _count: true,
+      }),
+      this.prisma.app.groupBy({
+        by: ['category'],
+        where: { category: { not: null } },
+        _count: true,
+      }),
+      this.prisma.refreshJob.findFirst({
+        where: { status: 'completed' },
+        orderBy: { finishedAt: 'desc' },
+      }),
+    ]);
 
-    const workersQuery = `SELECT COUNT(*) as count FROM apps WHERE type = 'worker'`;
-    const workers = await this.db.prepare(workersQuery).first<{ count: number }>();
+    const healthDistribution: Record<string, number> = {};
+    healthStats.forEach(stat => {
+      healthDistribution[stat.healthStatus] = stat._count;
+    });
 
-    const pagesQuery = `SELECT COUNT(*) as count FROM apps WHERE type = 'pages'`;
-    const pages = await this.db.prepare(pagesQuery).first<{ count: number }>();
-
-    const healthQuery = `
-      SELECT health_status, COUNT(*) as count
-      FROM apps
-      GROUP BY health_status
-    `;
-    const healthResults = await this.db.prepare(healthQuery).all<{ health_status: string; count: number }>();
-    const healthDistribution = healthResults.results.reduce((acc, row) => {
-      acc[row.health_status] = row.count;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const categoryQuery = `
-      SELECT category, COUNT(*) as count
-      FROM apps
-      WHERE category IS NOT NULL
-      GROUP BY category
-    `;
-    const categoryResults = await this.db.prepare(categoryQuery).all<{ category: string; count: number }>();
-    const categoriesDistribution = categoryResults.results.reduce((acc, row) => {
-      acc[row.category] = row.count;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const lastRefreshQuery = `
-      SELECT finished_at FROM refresh_jobs
-      WHERE status = 'completed'
-      ORDER BY finished_at DESC
-      LIMIT 1
-    `;
-    const lastRefresh = await this.db.prepare(lastRefreshQuery).first<{ finished_at: string }>();
+    const categoriesDistribution: Record<string, number> = {};
+    categoryStats.forEach(stat => {
+      if (stat.category) {
+        categoriesDistribution[stat.category] = stat._count;
+      }
+    });
 
     return {
-      total_apps: total?.count || 0,
-      total_workers: workers?.count || 0,
-      total_pages: pages?.count || 0,
+      total_apps: total,
+      total_workers: workers,
+      total_pages: pages,
       health_distribution: healthDistribution,
-      last_refresh_at: lastRefresh?.finished_at || null,
+      last_refresh_at: lastRefresh?.finishedAt || null,
       categories_distribution: categoriesDistribution,
     };
   }
 
   async recordVisit(appId: string, path: string, userAgent?: string): Promise<void> {
-    const query = `
-      INSERT INTO app_visits (id, app_id, ts, user_agent, path)
-      VALUES (?, ?, ?, ?, ?)
-    `;
-    await this.db.prepare(query).bind(
-      nanoid(),
-      appId,
-      new Date().toISOString(),
-      userAgent || null,
-      path
-    ).run();
+    const now = new Date().toISOString();
+
+    await this.prisma.appVisit.create({
+      data: {
+        id: nanoid(),
+        appId,
+        ts: now,
+        userAgent,
+        path,
+      },
+    });
 
     // Update last_seen_at
-    const updateQuery = `UPDATE apps SET last_seen_at = ? WHERE id = ?`;
-    await this.db.prepare(updateQuery).bind(new Date().toISOString(), appId).run();
+    await this.prisma.app.update({
+      where: { id: appId },
+      data: { lastSeenAt: now },
+    });
   }
 
   // Helper methods
 
-  private enrichApp(app: App): AppListItem {
+  private enrichApp(app: any): AppListItem {
     return {
       ...app,
-      tags: app.tags_json ? JSON.parse(app.tags_json) : undefined,
-      health_reasons: app.health_reasons_json ? JSON.parse(app.health_reasons_json) : undefined,
-      repo_links: app.repo_links_json ? JSON.parse(app.repo_links_json) : undefined,
+      cf_id: app.cfId,
+      display_name: app.displayName,
+      account_id: app.accountId,
+      tags_json: app.tagsJson,
+      ai_summary: app.aiSummary,
+      deployed_url: app.deployedUrl,
+      last_deployed_at: app.lastDeployedAt,
+      last_log_at: app.lastLogAt,
+      last_run_at: app.lastRunAt,
+      last_seen_at: app.lastSeenAt,
+      health_status: app.healthStatus,
+      health_score: app.healthScore,
+      health_reasons_json: app.healthReasonsJson,
+      repo_links_json: app.repoLinksJson,
+      repo_inference_evidence_json: app.repoInferenceEvidenceJson,
+      created_at: app.createdAt,
+      updated_at: app.updatedAt,
+      tags: app.tagsJson ? JSON.parse(app.tagsJson) : undefined,
+      health_reasons: app.healthReasonsJson ? JSON.parse(app.healthReasonsJson) : undefined,
+      repo_links: app.repoLinksJson ? JSON.parse(app.repoLinksJson) : undefined,
     };
   }
 
