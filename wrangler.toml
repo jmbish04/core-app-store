@@ -15,7 +15,7 @@ database_id = "1a5b8cf8-afaf-49e8-b7d7-095ea3eec041" // [2025-12-15] Set by jmbi
 # KV Namespace for caching
 [[kv_namespaces]]
 binding = "CACHE"
-id = "YOUR_KV_NAMESPACE_ID" // [2025-12-15] Set by jmbish04 (repo owner)
+id = "1366c4a4bddb4a7c96c0e9201270d16d" // [2025-12-15] Set by jmbish04 (repo owner)
 
 # Worker AI binding
 [ai]
