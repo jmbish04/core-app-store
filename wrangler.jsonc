@@ -1,0 +1,66 @@
+{
+  // Core App Store - Cloudflare Worker Configuration
+  "name": "core-app-store",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-14",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "observability": {
+    "enabled": true
+  },
+
+  "vars": {
+    "ENVIRONMENT": "production"
+  },
+
+  // D1 Database - Set by jmbish04 (2025-12-15)
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "core-app-store",
+      "database_id": "1a5b8cf8-afaf-49e8-b7d7-095ea3eec041"
+    }
+  ],
+
+  // KV Namespace for caching - Set by jmbish04 (2025-12-15)
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "1366c4a4bddb4a7c96c0e9201270d16d"
+    }
+  ],
+
+  // Worker AI binding
+  "ai": {
+    "binding": "AI"
+  },
+
+  // Workflows binding (currently in beta - temporarily disabled)
+  // TODO: Implement WorkflowEntrypoint classes and re-enable
+  // "workflows": [
+  //   {
+  //     "binding": "WORKFLOWS",
+  //     "name": "core-app-store-workflows",
+  //     "class_name": "RefreshInventoryWorkflow"
+  //   }
+  // ],
+
+  // Cron triggers for background jobs
+  "triggers": {
+    "crons": [
+      "*/15 * * * *",  // Every 15 minutes - lightweight health refresh
+      "0 * * * *",     // Every hour - log insights & repo inference
+      "0 2 * * *"      // Daily at 2 AM - full inventory reconcile
+    ]
+  },
+
+  // Development environment overrides
+  "env": {
+    "development": {
+      "name": "core-app-store-dev",
+      "vars": {
+        "ENVIRONMENT": "development"
+      }
+    }
+  }
+}
